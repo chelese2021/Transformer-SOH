@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Model files and scalers
+*.pkl
+*.pth
+*.h5
+*.ckpt
+
+# Data files
+data/
+*.csv
+*.xlsx
+
+# Checkpoints and results
+checkpoints/
+checkpoints_fixed/
+results/
+results_fixed/
+
+# Logs
+*.log
+training_log.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# System files
+nul
+.DS_Store
+Thumbs.db
