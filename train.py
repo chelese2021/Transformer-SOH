@@ -343,11 +343,12 @@ def main():
     config = {
         'batch_size': 384,  # 保守快速方案，确保不OOM
         'sequence_length': 60,
-        'num_epochs': 15,  # 减少epoch数量加快训练
+        'num_epochs': 50,  # 增加epoch数量以充分训练
         'learning_rate': 1e-4,
         'weight_decay': 1e-5,
         'num_workers': 0,  # Windows下必须为0
-        'model_type': 'lightweight',  # 使用轻量级模型加快训练
+        'model_type': 'multi_scale',  # 使用多尺度模型（专利模型）'standard', 'lightweight', 'multi_scale'
+        'd_model': 64,  # 模型维度
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
         'pin_memory': True  # 加速数据传输到GPU
     }
@@ -366,15 +367,24 @@ def main():
 
     # 创建模型
     print("\n创建模型...")
-    model = get_model(
-        model_type=config['model_type'],
-        input_dim=6,
-        d_model=64,  # 轻量级模型参数
-        nhead=4,
-        num_encoder_layers=2,
-        dim_feedforward=256,
-        dropout=0.1
-    )
+    if config['model_type'] == 'multi_scale':
+        # 多尺度模型参数
+        model = get_model(
+            model_type=config['model_type'],
+            input_dim=6,
+            d_model=config['d_model']
+        )
+    else:
+        # 标准或轻量级模型参数
+        model = get_model(
+            model_type=config['model_type'],
+            input_dim=6,
+            d_model=64,
+            nhead=4,
+            num_encoder_layers=2,
+            dim_feedforward=256,
+            dropout=0.1
+        )
 
     # 创建训练器
     trainer = Trainer(

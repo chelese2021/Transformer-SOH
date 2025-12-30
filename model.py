@@ -247,12 +247,177 @@ class LightweightBatteryTransformer(nn.Module):
         return output
 
 
+class MultiScaleFeatureExtractor(nn.Module):
+    """
+    针对电压/电流/温度的多尺度特征提取（专利核心创新）
+    短期：单循环内的V-I-T变化 (时间窗口: kernel_size=3)
+    中期：5-10个循环的趋势 (时间窗口: kernel_size=7)
+    长期：整体老化模式 (时间窗口: kernel_size=15)
+    """
+    def __init__(self, input_dim: int = 6, d_model: int = 64):
+        super().__init__()
+
+        # 三个尺度的卷积编码器（不同kernel_size捕获不同时间尺度）
+        self.short_conv = nn.Conv1d(input_dim, d_model, kernel_size=3, padding=1)
+        self.mid_conv = nn.Conv1d(input_dim, d_model, kernel_size=7, padding=3)
+        self.long_conv = nn.Conv1d(input_dim, d_model, kernel_size=15, padding=7)
+
+        # 轻量级Transformer（用于边缘部署）
+        self.short_transformer = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=4, dim_feedforward=128, batch_first=True
+        )
+        self.mid_transformer = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=4, dim_feedforward=128, batch_first=True
+        )
+        self.long_transformer = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=4, dim_feedforward=128, batch_first=True
+        )
+
+        # 跨尺度注意力融合（专利核心创新点）
+        self.cross_scale_attention = CrossScaleAttention(d_model)
+
+    def forward(self, x: torch.Tensor) -> tuple:
+        """
+        参数：
+            x: [batch, seq_len, input_dim]
+
+        返回：
+            fused_features: [batch, d_model]
+            scale_weights: [batch, 3] - 三个尺度的权重（用于可解释性）
+        """
+        # x: [batch, seq_len, input_dim] -> [batch, input_dim, seq_len]
+        x = x.permute(0, 2, 1)
+
+        # 提取不同尺度特征
+        short_feat = self.short_conv(x).permute(0, 2, 1)  # [batch, seq_len, d_model]
+        mid_feat = self.mid_conv(x).permute(0, 2, 1)
+        long_feat = self.long_conv(x).permute(0, 2, 1)
+
+        # Transformer编码
+        short_encoded = self.short_transformer(short_feat)
+        mid_encoded = self.mid_transformer(mid_feat)
+        long_encoded = self.long_transformer(long_feat)
+
+        # 跨尺度融合（创新点）
+        fused_features, scale_weights = self.cross_scale_attention(
+            short_encoded, mid_encoded, long_encoded
+        )
+
+        return fused_features, scale_weights
+
+
+class CrossScaleAttention(nn.Module):
+    """
+    跨尺度自适应注意力融合机制（专利核心）
+    根据当前电池状态动态调整不同尺度特征的权重
+
+    创新点：
+    1. 自适应权重：根据输入数据自动学习三个尺度的重要性
+    2. 可解释性：返回权重便于分析模型决策过程
+    """
+    def __init__(self, d_model: int):
+        super().__init__()
+        self.attention_weights = nn.Sequential(
+            nn.Linear(d_model * 3, 128),
+            nn.ReLU(),
+            nn.Linear(128, 3),
+            nn.Softmax(dim=-1)
+        )
+        self.fusion = nn.Linear(d_model * 3, d_model)
+
+    def forward(self, short: torch.Tensor, mid: torch.Tensor, long: torch.Tensor) -> tuple:
+        """
+        参数：
+            short: [batch, seq_len, d_model] - 短期特征
+            mid: [batch, seq_len, d_model] - 中期特征
+            long: [batch, seq_len, d_model] - 长期特征
+
+        返回：
+            output: [batch, d_model] - 融合后的特征
+            weights: [batch, 3] - 三个尺度的权重
+        """
+        # 全局池化
+        short_pool = short.mean(dim=1)  # [batch, d_model]
+        mid_pool = mid.mean(dim=1)
+        long_pool = long.mean(dim=1)
+
+        # 自适应权重计算
+        concat = torch.cat([short_pool, mid_pool, long_pool], dim=-1)  # [batch, d_model*3]
+        weights = self.attention_weights(concat)  # [batch, 3]
+
+        # 加权融合
+        weighted_short = short * weights[:, 0:1].unsqueeze(-1)
+        weighted_mid = mid * weights[:, 1:2].unsqueeze(-1)
+        weighted_long = long * weights[:, 2:3].unsqueeze(-1)
+
+        fused = torch.cat([weighted_short.mean(dim=1),
+                          weighted_mid.mean(dim=1),
+                          weighted_long.mean(dim=1)], dim=-1)
+        output = self.fusion(fused)
+
+        return output, weights
+
+
+class MultiScaleSOHSOCPredictor(nn.Module):
+    """
+    多尺度轻量级SOH/SOC联合预测模型（专利模型）
+
+    创新点：
+    1. 多尺度特征提取：捕获短期、中期、长期的电池退化模式
+    2. 跨尺度自适应注意力：动态调整不同尺度的重要性
+    3. 轻量化设计：参数量<500KB，适合边缘端BMS部署
+    4. 双任务学习：同时预测SOH和SOC，提升泛化能力
+    """
+    def __init__(self, input_dim: int = 6, d_model: int = 64):
+        super().__init__()
+        self.feature_extractor = MultiScaleFeatureExtractor(input_dim, d_model)
+
+        # 双任务预测头
+        self.soh_head = nn.Sequential(
+            nn.Linear(d_model, 32),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(32, 1)
+        )
+
+        self.soc_head = nn.Sequential(
+            nn.Linear(d_model, 32),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(32, 1)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        参数：
+            x: [batch_size, seq_len, input_dim]
+
+        返回：
+            output: [batch_size, 2] - [SOC, SOH]
+        """
+        features, scale_weights = self.feature_extractor(x)
+        soh = self.soh_head(features)  # [batch_size, 1]
+        soc = self.soc_head(features)  # [batch_size, 1]
+
+        # 合并输出 [SOC, SOH]
+        output = torch.cat([soc, soh], dim=1)
+
+        # 保存权重用于可解释性分析
+        self.last_scale_weights = scale_weights
+
+        return output
+
+    def count_parameters(self) -> int:
+        """返回模型可训练参数量"""
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+
 def get_model(model_type: str = 'standard', **kwargs) -> nn.Module:
     """
     获取模型实例
 
     参数：
-        model_type: 'standard' 或 'lightweight'
+        model_type: 'standard', 'lightweight', 或 'multi_scale'
         **kwargs: 模型参数
 
     返回：
@@ -262,6 +427,8 @@ def get_model(model_type: str = 'standard', **kwargs) -> nn.Module:
         return BatteryTransformer(**kwargs)
     elif model_type == 'lightweight':
         return LightweightBatteryTransformer(**kwargs)
+    elif model_type == 'multi_scale':
+        return MultiScaleSOHSOCPredictor(**kwargs)
     else:
         raise ValueError(f"未知的模型类型: {model_type}")
 
@@ -289,3 +456,12 @@ if __name__ == '__main__':
     print(f"输入形状: {x.shape}")
     print(f"输出形状: {output_light.shape}")
     print(f"模型参数量: {sum(p.numel() for p in model_light.parameters()):,}")
+
+    print("\n多尺度Transformer模型（专利模型）:")
+    model_multi = MultiScaleSOHSOCPredictor(input_dim=input_dim, d_model=64)
+    output_multi = model_multi(x)
+    print(f"输入形状: {x.shape}")
+    print(f"输出形状: {output_multi.shape}")
+    print(f"模型参数量: {model_multi.count_parameters():,}")
+    print(f"尺度权重形状: {model_multi.last_scale_weights.shape}")
+    print(f"尺度权重示例: {model_multi.last_scale_weights[0]}")  # 显示第一个样本的权重
