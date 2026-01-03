@@ -186,10 +186,19 @@ class ModelEvaluator:
         for idx, metrics in enumerate(all_metrics):
             # SOC散点图
             ax = axes[idx, 0]
-            ax.scatter(metrics['soc_trues'], metrics['soc_preds'], alpha=0.5, s=10)
+            # 改进：使用密度颜色映射，减少数据点数量（每100个点采样1个）
+            sample_indices = np.arange(0, len(metrics['soc_trues']), 100)
+            ax.scatter(np.array(metrics['soc_trues'])[sample_indices],
+                      np.array(metrics['soc_preds'])[sample_indices],
+                      alpha=0.3, s=5, c='blue', edgecolors='none')
             ax.plot([min(metrics['soc_trues']), max(metrics['soc_trues'])],
                    [min(metrics['soc_trues']), max(metrics['soc_trues'])],
                    'r--', lw=2, label='理想预测')
+            # 添加误差带
+            ax.fill_between([min(metrics['soc_trues']), max(metrics['soc_trues'])],
+                           [min(metrics['soc_trues'])-3, max(metrics['soc_trues'])-3],
+                           [min(metrics['soc_trues'])+3, max(metrics['soc_trues'])+3],
+                           alpha=0.1, color='green', label='±3% 误差带')
             ax.set_xlabel('真实SOC (%)')
             ax.set_ylabel('预测SOC (%)')
             ax.set_title(f"{metrics['model_name']} - SOC预测\nR²={metrics['SOC_R2']:.4f}, MAE={metrics['SOC_MAE']:.4f}")
@@ -198,10 +207,21 @@ class ModelEvaluator:
 
             # SOH散点图
             ax = axes[idx, 1]
-            ax.scatter(metrics['soh_trues'], metrics['soh_preds'], alpha=0.5, s=10, color='orange')
+            # 改进：采样显示，添加误差带
+            sample_indices = np.arange(0, len(metrics['soh_trues']), 100)
+            ax.scatter(np.array(metrics['soh_trues'])[sample_indices],
+                      np.array(metrics['soh_preds'])[sample_indices],
+                      alpha=0.3, s=5, color='orange', edgecolors='none')
             ax.plot([min(metrics['soh_trues']), max(metrics['soh_trues'])],
                    [min(metrics['soh_trues']), max(metrics['soh_trues'])],
                    'r--', lw=2, label='理想预测')
+            # 添加误差带 (±2%)
+            soh_min = min(metrics['soh_trues'])
+            soh_max = max(metrics['soh_trues'])
+            ax.fill_between([soh_min, soh_max],
+                           [soh_min-2, soh_max-2],
+                           [soh_min+2, soh_max+2],
+                           alpha=0.1, color='green', label='±2% 误差带')
             ax.set_xlabel('真实SOH (%)')
             ax.set_ylabel('预测SOH (%)')
             ax.set_title(f"{metrics['model_name']} - SOH预测\nR²={metrics['SOH_R2']:.4f}, MAE={metrics['SOH_MAE']:.4f}")

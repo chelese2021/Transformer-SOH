@@ -149,7 +149,7 @@ def export_to_onnx(
     input_names: list = None,
     output_names: list = None,
     dynamic_axes: dict = None,
-    opset_version: int = 11
+    opset_version: int = 14
 ):
     """
     导出模型为ONNX格式
@@ -176,10 +176,12 @@ def export_to_onnx(
         input_names = ['input']
     if output_names is None:
         output_names = ['output']
+
+    # 根据实际的input_names和output_names配置dynamic_axes
     if dynamic_axes is None:
         dynamic_axes = {
-            'input': {0: 'batch_size'},
-            'output': {0: 'batch_size'}
+            input_names[0]: {0: 'batch_size'},
+            output_names[0]: {0: 'batch_size'}
         }
 
     print(f"导出ONNX模型到: {save_path}")

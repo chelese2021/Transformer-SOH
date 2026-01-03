@@ -15,6 +15,7 @@ ENV/
 *.pth
 *.h5
 *.ckpt
+*.onnx
 
 # Data files
 data/
@@ -44,3 +45,8 @@ training_log.txt
 nul
 .DS_Store
 Thumbs.db
+
+# Compressed files
+*.zip
+*.tar.gz
+*.rar
