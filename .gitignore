@@ -22,11 +22,16 @@ data/
 *.csv
 *.xlsx
 
-# Checkpoints and results
+# Allow results CSV
+!results/*.csv
+
+# Checkpoints
 checkpoints/
 checkpoints_fixed/
-results/
+
+# Results - keep experiment results but exclude evaluation report
 results_fixed/
+results/evaluation_report.txt
 
 # Logs
 *.log
@@ -50,3 +55,7 @@ Thumbs.db
 *.zip
 *.tar.gz
 *.rar
+
+# Patent application documents (keep private)
+专利申请/
+专利申请.zip
